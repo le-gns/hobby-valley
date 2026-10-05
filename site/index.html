@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Hobby Valley</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>" />
+<style>
+  html, body { margin: 0; height: 100%; background: #2a1a10; overflow: hidden; font-family: "Trebuchet MS", Verdana, sans-serif; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; image-rendering: pixelated; outline: none; touch-action: none; -webkit-touch-callout: none; }
+  #gate { background: radial-gradient(circle at 50% 30%, #8fcf5c, #4f8f34 70%); position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .card { background: #faeac4; border: 6px solid #4a2e1c; border-radius: 14px; box-shadow: 0 0 0 4px #faeac4, 0 0 0 8px #a06e3c, 0 12px 30px rgba(0,0,0,.35); padding: 28px 34px; width: min(360px, 86vw); color: #4a2e1c; text-align: center; }
+  h1 { margin: 0 0 4px; font-size: 40px; color: #ffe08a; -webkit-text-stroke: 2px #5a2e14; paint-order: stroke fill; text-shadow: 0 3px 0 #5a2e14; letter-spacing: 1px; }
+  p { margin: 6px 0 18px; font-size: 14px; color: #7a4a2a; }
+  label { display: block; text-align: left; font-weight: bold; font-size: 13px; margin: 10px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 16px; border: 3px solid #a06e3c; border-radius: 8px; background: #fff8e6; color: #3a2414; font-family: inherit; }
+  input:focus { outline: none; border-color: #e8384f; }
+  button { margin-top: 18px; width: 100%; padding: 12px; font-size: 18px; font-weight: bold; font-family: inherit; color: #fff4d8; background: #5f9f3a; border: 3px solid #3a6a24; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 0 #3a6a24; }
+  button:active { transform: translateY(2px); box-shadow: 0 2px 0 #3a6a24; }
+  button:disabled { opacity: .7; cursor: wait; }
+  .remember { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 12px; font-size: 13px; }
+  .remember input { width: auto; }
+  #err { min-height: 18px; color: #c0302a; font-size: 13px; font-weight: bold; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="gate">
+  <form class="card" id="f" autocomplete="on">
+    <h1>Hobby Valley</h1>
+    <p>A cozy village where everyone has a hobby.<br />Colleagues only, please sign in to play.</p>
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" placeholder="play" required />
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required />
+    <div class="remember"><input type="checkbox" id="r" checked /><label for="r" style="margin:0;font-weight:normal">Remember me on this device</label></div>
+    <button id="b" type="submit">Enter the valley 🌱</button>
+    <div id="err"></div>
+  </form>
+</div>
+<script>
+(() => {
+  const USERS = ['play', 'hobby'];
+  const KEY = 'hobby-valley-pass';
+  const $ = (id) => document.getElementById(id);
+  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  let payload = null;
+  const getPayload = async () => payload || (payload = await (await fetch('game.enc.json', { cache: 'no-cache' })).json());
+
+  async function unlock(pass) {
+    const p = await getPayload();
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: unb64(p.salt), iterations: p.iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const js = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(p.iv) }, key, unb64(p.data)); // throws on wrong password
+    $('gate').remove();
+    const cv = document.createElement('canvas'); cv.id = 'game'; cv.tabIndex = 0; document.body.appendChild(cv);
+    const s = document.createElement('script'); s.type = 'module';
+    s.src = URL.createObjectURL(new Blob([js], { type: 'text/javascript' }));
+    document.body.appendChild(s);
+    cv.focus();
+  }
+
+  $('f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = $('u').value.trim().toLowerCase(), pass = $('p').value;
+    $('err').textContent = '';
+    if (!USERS.includes(user)) { $('err').textContent = 'Unknown username. Try "play" or "hobby".'; return; }
+    $('b').disabled = true; $('b').textContent = 'Opening the gate...';
+    const remember = $('r').checked;
+    try {
+      await unlock(pass);
+      try { remember ? localStorage.setItem(KEY, pass) : localStorage.removeItem(KEY); } catch (_) {}
+    } catch (err) {
+      $('b').disabled = false; $('b').textContent = 'Enter the valley 🌱';
+      $('err').textContent = (err && err.name === 'OperationError') ? 'Wrong password. Please try again.' : 'Could not load the game. Please refresh.';
+    }
+  });
+
+  const saved = (() => { try { return localStorage.getItem(KEY); } catch (_) { return null; } })();
+  if (saved) unlock(saved).catch(() => { try { localStorage.removeItem(KEY); } catch (_) {} });
+  else $('u').focus();
+})();
+</script>
+</body>
+</html>
